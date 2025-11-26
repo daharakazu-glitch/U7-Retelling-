@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reproduction Practice App (V7)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            /* 読みやすさのために標準的なフォントファミリーに変更 */
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+        }
+        /* ★ 変更: キーワードタグのサイズを大きく */
+        .keyword-tag {
+            background-color: #f0f9ff; /* sky-50 */
+            color: #0c4a6e; /* sky-900 */
+            padding: 8px 14px; /* サイズ調整 */
+            border-radius: 9999px; /* rounded-full */
+            font-size: 1.25rem; /* text-xl相当 (大きく) */
+            font-weight: 500; /* medium */
+            margin: 6px; /* マージン調整 */
+            display: inline-block;
+            border: 1px solid #bae6fd; /* sky-200 */
+            box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+        }
+        .used-keyword {
+            background-color: #dcfce7; /* green-100 */
+            color: #166534; /* green-800 */
+            border-color: #86efac; /* green-300 */
+            font-weight: 600; /* semibold */
+        }
+        #transcript-container {
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        /* アクティブなモードボタン */
+        .mode-btn-active {
+            background-color: #0284c7 !important; /* sky-600 */
+            color: white !important;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+         /* 非アクティブなモードボタン */
+         .mode-btn-inactive {
+            background-color: #e2e8f0; /* slate-200 */
+            color: #334155; /* slate-700 */
+        }
+        
+        /* --- ★ 変更: 画像コンテナのサイズを大きく --- */
+        .img-container {
+            position: relative;
+            width: 210px; /* 大きく (150px -> 210px) */
+            height: 140px; /* 大きく (100px -> 140px) */
+            background-color: #e2e8f0; /* slate-200 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            overflow: hidden; /* 画像がコンテナに収まるように */
+            border: 2px solid white;
+        }
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #0284c7; /* Sky 600 */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            margin-top: -20px;
+            margin-left: -20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .img-container img {
+            display: none; /* 初期状態では非表示 */
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .img-container img.loaded {
+            display: block; /* 読み込み完了で表示 */
+        }
+        /* --- スタイル変更ここまで --- */
+
+        /* ズームエフェクト用のオーバーレイ */
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(15, 23, 42, 0.75); /* slate-900/75 */
+            z-index: 40;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            pointer-events: none; /* 非表示時はクリック不可 */
+        }
+        #overlay.show {
+            opacity: 1;
+        }
+
+        /* ズーム中のキーワードセクション */
+        #keywords-section.zoomed {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 90vw;
+            max-width: 900px; /* 大画面での最大幅 */
+            max-height: 85vh; /* 少し高さを抑える */
+            transform: translate(-50%, -50%);
+            z-index: 50;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+            /* ★ 変更: 下部のコントロールに隠れないように余白を追加 */
+            padding-bottom: 180px; 
+        }
+
+        /* フローティング録音コントロール */
+        #recording-controls.active {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 60;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 1rem 1.5rem;
+            border-radius: 9999px;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            
+            /* 水平レイアウト */
+            flex-direction: row;
+            gap: 1.5rem;
+            align-items: center;
+            width: auto;
+        }
+
+        #recording-controls.active #timer {
+            font-size: 2.25rem; /* 3xl */
+            margin: 0;
+        }
+        
+        #recording-controls.active #record-btn {
+            width: auto;
+            padding: 0.75rem 2rem;
+            font-size: 1.125rem; /* text-lg */
+            margin: 0;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 flex items-center justify-center min-h-screen p-4">
+
+    <!-- オーバーレイ -->
+    <div id="overlay"></div>
+
+    <div class="w-full max-w-5xl mx-auto bg-white rounded-2xl shadow-xl p-6 md:p-8 relative">
+        <header class="text-center mb-6">
+            <h1 class="text-4xl font-bold text-slate-900">Reproduction Practice</h1>
+            <p class="text-slate-500 mt-2 text-lg font-medium">Topic: V7: Where will you live in the future?</p>
+        </header>
+
+        <!-- モード選択 -->
+        <div id="mode-selection" class="flex justify-center gap-4 mb-4">
+            <button id="mode-full" class="px-6 py-3 font-semibold rounded-full transition-colors duration-300">Full Summary Mode</button>
+            <button id="mode-paragraph" class="px-6 py-3 font-semibold rounded-full transition-colors duration-300">Section Mode</button>
+        </div>
+
+        <!-- セクション選択 -->
+        <div id="paragraph-selection" class="hidden justify-center gap-2 mb-6 flex-wrap">
+            <!-- セクションボタンはJSで生成 -->
+        </div>
+
+        <!-- 時間制限設定 -->
+        <div id="time-setting-container" class="flex justify-center items-center gap-4 mb-6">
+            <label for="time-slider" class="text-lg font-semibold text-slate-600">Time Limit:</label>
+            <input type="range" id="time-slider" min="30" max="300" step="15" value="180" class="w-48 cursor-pointer" aria-label="Time limit slider">
+            <span id="time-display" class="text-lg font-bold text-sky-600 w-16 text-center">3:00</span>
+        </div>
+
+
+        <div class="grid md:grid-cols-2 gap-8">
+            <!-- キーワードセクション -->
+            <div id="keywords-section" class="bg-slate-100 rounded-lg p-6 transition-all duration-300 ease-in-out">
+                <h2 id="keywords-title" class="text-2xl font-bold mb-4 text-slate-700 text-center">Keywords</h2>
+                <div id="keywords-container" class="space-y-4">
+                    <!-- キーワードはJSで挿入 -->
+                </div>
+            </div>
+
+            <!-- 録音・評価セクション -->
+            <div class="space-y-6">
+                <div class="bg-slate-100 rounded-lg p-6 flex flex-col items-center justify-center space-y-4">
+                    <div id="status" class="text-xl font-medium text-slate-600">Press "Start" to begin</div>
+                     <div id="recording-controls" class="flex flex-col items-center justify-center space-y-4 w-full transition-all duration-300">
+                        <div id="timer" class="text-5xl font-bold text-sky-600">3:00</div>
+                        <button id="record-btn" class="px-10 py-4 bg-sky-600 text-white font-bold text-lg rounded-full shadow-lg hover:bg-sky-700 transition-all duration-300 w-48 text-center">
+                            Start
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 結果セクション -->
+                <div id="result-container" class="hidden bg-white border border-slate-200 rounded-lg p-6 space-y-4">
+                    <h2 class="text-2xl font-bold text-slate-700">Evaluation Result</h2>
+                    <div class="text-center">
+                        <p class="text-lg text-slate-500">Your Score</p>
+                        <p id="score" class="text-7xl font-bold text-sky-600">0</p>
+                    </div>
+                    <div>
+                        <p class="font-bold text-slate-600 text-lg">Feedback:</p>
+                        <p id="feedback" class="text-slate-600 bg-slate-50 p-3 rounded-md text-lg"></p>
+                    </div>
+                     <div>
+                        <p class="font-bold text-slate-600 text-lg mb-2">Listen to your recording:</p>
+                        <audio id="audio-player" controls class="w-full"></audio>
+                    </div>
+                    <div>
+                        <p class="font-bold text-slate-600 text-lg">Recognized Text:</p>
+                        <div id="transcript-container" class="text-slate-600 bg-slate-50 p-3 rounded-md border border-slate-200">
+                           <p id="transcript" class="text-lg"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ★ 修正: すべてのJavaScriptを <script> タグ内に移動 -->
+    <script type="module">
+        // DOM要素
+        const recordBtn = document.getElementById('record-btn');
+        const statusEl = document.getElementById('status');
+        const timerEl = document.getElementById('timer');
+        const keywordsContainer = document.getElementById('keywords-container');
+        const keywordsSection = document.getElementById('keywords-section');
+        const keywordsTitle = document.getElementById('keywords-title');
+        const resultContainer = document.getElementById('result-container');
+        const scoreEl = document.getElementById('score');
+        const feedbackEl = document.getElementById('feedback');
+        const audioPlayer = document.getElementById('audio-player');
+        const transcriptEl = document.getElementById('transcript');
+        const modeFullBtn = document.getElementById('mode-full');
+        const modeParagraphBtn = document.getElementById('mode-paragraph');
+        const paragraphSelectionContainer = document.getElementById('paragraph-selection');
+        const timeSlider = document.getElementById('time-slider');
+        const timeDisplay = document.getElementById('time-display');
+        const overlay = document.getElementById('overlay');
+        const recordingControls = document.getElementById('recording-controls');
+
+
+        // Speech Recognition セットアップ
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.lang = 'en-US'; // 英語の練習
+            recognition.interimResults = true;
+        } else {
+            statusEl.textContent = "Sorry, your browser doesn't support Speech Recognition.";
+            recordBtn.disabled = true;
+        }
+        
+        // Media Recorder セットアップ
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioBlob;
+        
+        // アプリの状態
+        let isRecording = false;
+        let timerId;
+        let currentMode = 'full'; // 'full' (フル) または 'paragraph' (セクション)
+        let currentParagraphIndex = 0; // 0 または 1
+        const DEFAULT_FULL_SECONDS = 180; // 3分 (PDFに基づく)
+        const DEFAULT_PARAGRAPH_SECONDS = 90; // 1分30秒 (セクションのデフォルト)
+        let secondsForTimer;
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        // キーワードデータ (PDFから抽出)
+        const sectionTitles = ["Emi & Matt", "Jennifer Lue"];
+        const keywordGroups = [
+            // Emi and Matt
+            ["have chosen", "to live in", "This is because", "are wonderful,", "want to share", "with", "Now they sell", "food truck", "on the foot of", "enjoy watching", "appreciate"],
+            // Jennifer Lue
+            ["lives on", "belonging to", "works as", "very curious about", "helps others", "the weather", "challenging,", "the best place", "to explore", "discover"]
+        ];
+        const allKeywords = keywordGroups.flat();
+
+        function createKeywordTag(keyword) {
+            const tag = document.createElement('span');
+            tag.textContent = keyword;
+            tag.className = 'keyword-tag';
+            // キーワード内の特殊文字をID用にエスケープ
+            const safeId = keyword.replace(/[^a-zA-Z0-9]/g, '-');
+            tag.id = `kw-${safeId}`;
+            return tag;
+        }
+
+        // スライダーからタイマー表示を更新
+        function updateTimerDisplayFromSlider() {
+            const seconds = parseInt(timeSlider.value);
+            const min = Math.floor(seconds / 60);
+            const sec = seconds % 60;
+            const formattedTime = `${min}:${sec < 10 ? '0' : ''}${sec}`;
+            timeDisplay.textContent = formattedTime;
+            if (!isRecording) {
+                timerEl.textContent = formattedTime;
+            }
+        }
+
+        // 練習エリアのセットアップ
+        function setupPracticeArea() {
+            if (isRecording) stopRecording();
+            stopTimer();
+            resultContainer.classList.add('hidden');
+            recordBtn.disabled = false;
+            statusEl.textContent = 'Press "Start" to begin';
+            keywordsContainer.innerHTML = '';
+
+            // スライダーの値からタイマーを更新
+            updateTimerDisplayFromSlider();
+
+            if (currentMode === 'full') {
+                keywordsTitle.textContent = 'Keywords (Full Summary)';
+                keywordGroups.forEach((group, index) => {
+                    const groupContainer = document.createElement('div');
+                    groupContainer.className = index === 0 ? '' : 'border-t border-slate-300 pt-4';
+                    const groupTitle = document.createElement('h3');
+                    // セクションのタイトルを使用
+                    groupTitle.textContent = `Section ${index + 1}: ${sectionTitles[index]}`;
+                    groupTitle.className = 'text-xl font-bold text-slate-600 mb-4 text-center'; // ★ 文字を大きく
+                    groupContainer.appendChild(groupTitle);
+
+                    const keywordsWrapper = document.createElement('div');
+                    keywordsWrapper.className = 'flex flex-wrap justify-center';
+                    group.forEach(keyword => keywordsWrapper.appendChild(createKeywordTag(keyword)));
+                    groupContainer.appendChild(keywordsWrapper);
+                    
+                    // ★ 修正: keywordsContainer に groupContainer を追加
+                    keywordsContainer.appendChild(groupContainer);
+                });
+            } else { // セクションモード
+                keywordsTitle.textContent = `Keywords (${sectionTitles[currentParagraphIndex]})`;
+                
+                const group = keywordGroups[currentParagraphIndex];
+                const keywordsWrapper = document.createElement('div');
+                keywordsWrapper.className = 'flex flex-wrap justify-center';
+                group.forEach(keyword => keywordsWrapper.appendChild(createKeywordTag(keyword)));
+                keywordsContainer.appendChild(keywordsWrapper);
+            }
+        }
+
+        // セクション選択ボタンのセットアップ
+        function setupParagraphButtons() {
+            paragraphSelectionContainer.innerHTML = '';
+            sectionTitles.forEach((title, index) => {
+                const btn = document.createElement('button');
+                btn.textContent = title;
+                btn.className = 'px-4 py-2 font-semibold rounded-full transition-colors duration-300';
+                btn.dataset.index = index;
+                btn.addEventListener('click', () => {
+                    currentParagraphIndex = index;
+                    setActiveParagraphButton();
+                    setupPracticeArea();
+                });
+                paragraphSelectionContainer.appendChild(btn);
+            });
+        }
+        
+        // アクティブなセクションボタンのスタイル設定
+        function setActiveParagraphButton() {
+            const buttons = paragraphSelectionContainer.querySelectorAll('button');
+            buttons.forEach((btn, index) => {
+                btn.classList.toggle('mode-btn-active', index === currentParagraphIndex);
+                btn.classList.toggle('mode-btn-inactive', index !== currentParagraphIndex);
+            });
+        }
+        
+        // フルサマリーモード
+        modeFullBtn.addEventListener('click', () => {
+            currentMode = 'full';
+            modeFullBtn.classList.add('mode-btn-active');
+            modeFullBtn.classList.remove('mode-btn-inactive');
+            modeParagraphBtn.classList.remove('mode-btn-active');
+            modeParagraphBtn.classList.add('mode-btn-inactive');
+            paragraphSelectionContainer.classList.add('hidden');
+            timeSlider.value = DEFAULT_FULL_SECONDS;
+            setupPracticeArea();
+        });
+
+        // セクションモード
+        modeParagraphBtn.addEventListener('click', () => {
+            currentMode = 'paragraph';
+            modeParagraphBtn.classList.add('mode-btn-active');
+            modeParagraphBtn.classList.remove('mode-btn-inactive');
+            modeFullBtn.classList.remove('mode-btn-active');
+            modeFullBtn.classList.add('mode-btn-inactive');
+            paragraphSelectionContainer.classList.remove('hidden');
+            setupParagraphButtons();
+            currentParagraphIndex = 0; // 最初のセクションにリセット
+            setActiveParagraphButton();
+            timeSlider.value = DEFAULT_PARAGRAPH_SECONDS;
+            setupPracticeArea();
+        });
+
+        // タイムスライダーの入力イベント
+        timeSlider.addEventListener('input', updateTimerDisplayFromSlider);
+
+        // タイマースタート
+        function startTimer() {
+            secondsForTimer = parseInt(timeSlider.value);
+            timerId = setInterval(() => {
+                secondsForTimer--;
+                const min = Math.floor(secondsForTimer / 60);
+                const sec = secondsForTimer % 60;
+                timerEl.textContent = `${min}:${sec < 10 ? '0' : ''}${sec}`;
+                if (secondsForTimer <= 0) {
+                    stopRecording();
+                }
+            }, 1000);
+        }
+
+        // タイマーストップ
+        function stopTimer() {
+            clearInterval(timerId);
+        }
+
+        // 録音開始
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                isRecording = true;
+                finalTranscript = '';
+                interimTranscript = '';
+                transcriptEl.parentElement.classList.remove('hidden');
+                transcriptEl.textContent = 'Listening...';
+                audioChunks = [];
+
+                // ズームエフェクト開始
+                overlay.classList.add('show');
+                keywordsSection.classList.add('zoomed');
+                recordingControls.classList.add('active');
+
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.start();
+                mediaRecorder.addEventListener('dataavailable', e => audioChunks.push(e.data));
+                mediaRecorder.addEventListener('stop', () => {
+                    audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    audioPlayer.src = URL.createObjectURL(audioBlob);
+                    // すべてのトラックを停止
+                    stream.getTracks().forEach(track => track.stop());
+                });
+                
+                recognition.start();
+                
+                statusEl.textContent = 'Recording... Speak now!';
+                recordBtn.textContent = 'Stop';
+                resultContainer.classList.add('hidden');
+                startTimer();
+            } catch (err) {
+                console.error("Error accessing microphone:", err);
+                statusEl.textContent = "Microphone access denied.";
+            }
+        }
+
+        // 録音停止
+        function stopRecording() {
+            if (!isRecording) return;
+            isRecording = false;
+
+            // ズームエフェクト終了
+            overlay.classList.remove('show');
+            keywordsSection.classList.remove('zoomed');
+            recordingControls.classList.remove('active');
+            
+            if (mediaRecorder) mediaRecorder.stop();
+            if (recognition) recognition.stop();
+            
+            statusEl.textContent = 'Evaluating... Please wait.';
+            recordBtn.textContent = 'Start';
+            recordBtn.disabled = true;
+            stopTimer();
+            updateTimerDisplayFromSlider(); // タイマー表示をリセット
+        }
+
+        // 録音ボタンのクリックイベント
+        recordBtn.addEventListener('click', () => {
+            isRecording ? stopRecording() : startRecording();
+        });
+        
+        // 音声認識の結果処理
+        recognition.onresult = (event) => {
+            interimTranscript = '';
+            let tempFinalTranscript = '';
+            for (let i = 0; i < event.results.length; ++i) {
+                const transcriptPart = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    tempFinalTranscript += transcriptPart + ' ';
+                } else {
+                    interimTranscript += transcriptPart;
+                }
+            }
+            finalTranscript = tempFinalTranscript;
+            transcriptEl.textContent = finalTranscript + interimTranscript;
+        };
+        
+        // 音声認識の終了イベント
+        recognition.onend = () => {
+            // 録音中ではない場合（＝Stopボタンまたは時間切れで停止した場合）のみ評価を実行
+            if (!isRecording) {
+                 evaluateSummary(finalTranscript);
+                 recordBtn.disabled = false;
+            }
+        };
+
+        // サマリーの評価
+        function evaluateSummary(transcript) {
+            statusEl.textContent = 'Evaluation complete!';
+            transcriptEl.textContent = transcript.trim() || "No speech was detected.";
+
+            if (!transcript.trim()) {
+                scoreEl.textContent = "0";
+                feedbackEl.textContent = "We couldn't hear anything. Please make sure your microphone is working and try again.";
+                resultContainer.classList.remove('hidden');
+                return;
+            }
+
+            // 評価対象のキーワードリストを決定
+            const keywordsToEvaluate = (currentMode === 'full') ? allKeywords : keywordGroups[currentParagraphIndex];
+            const lowerCaseTranscript = transcript.toLowerCase();
+            let matchedKeywords = [];
+
+            // すべてのキーワードタグのハイライトをリセット
+            document.querySelectorAll('.keyword-tag').forEach(tag => {
+                tag.classList.remove('used-keyword');
+            });
+
+            keywordsToEvaluate.forEach(keyword => {
+                // キーワード内の句読点を考慮（例: "wonderful,"）
+                const lowerCaseKeyword = keyword.toLowerCase();
+                if (lowerCaseTranscript.includes(lowerCaseKeyword)) {
+                    matchedKeywords.push(keyword);
+                    // IDを検索してハイライト
+                    const safeId = keyword.replace(/[^a-zA-Z0-9]/g, '-');
+                    const tag = document.getElementById(`kw-${safeId}`);
+                    if(tag) tag.classList.add('used-keyword');
+                }
+            });
+
+            // スコア計算 (元のロジックを流用)
+            const baseScore = keywordsToEvaluate.length > 0 ? (matchedKeywords.length / keywordsToEvaluate.length) * 100 : 0;
+            // 15点の基本点と1.2倍のブースト、最大100点
+            const finalScore = Math.min(100, Math.round(baseScore * 1.2 + 15));
+
+            scoreEl.textContent = finalScore;
+            
+            // フィードバックの生成
+            let feedbackText = '';
+            if (finalScore >= 90) {
+                feedbackText = "Excellent! You've created a wonderful summary using the keywords. Your speaking is clear and well-structured.";
+            } else if (finalScore >= 70) {
+                feedbackText = "Great job! You've used many of the keywords well. Try to connect the ideas more smoothly next time.";
+            } else if (finalScore >= 50) {
+                feedbackText = "Good effort! You've got the main ideas. Focus on using more of the provided keywords to build your summary.";
+            } else {
+                feedbackText = "Keep practicing! Listen to your recording. Try to connect more keywords to tell the story.";
+            }
+
+            // 未使用のキーワードをフィードバックに追加
+            const unusedKeywords = keywordsToEvaluate.filter(k => !matchedKeywords.includes(k));
+            if (unusedKeywords.length > 0 && finalScore < 95) {
+                feedbackText += ` \nFor an even better summary, try including: "${unusedKeywords.slice(0, 2).join('", "')}".`;
+            }
+
+            feedbackEl.textContent = feedbackText;
+            resultContainer.classList.remove('hidden');
+        }
+
+        // 初期セットアップ
+        window.onload = () => {
+            // 最初にフルサマリーモードで起動
+            modeFullBtn.click();
+        };
+    </script>
+</body>
+</html>
